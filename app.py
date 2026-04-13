@@ -37,16 +37,19 @@ def parse_din_xml(file_content):
     root = tree.getroot()
     props = {}
     for prop in root.findall(".//Property-Data"):
-        name = prop.find("PropertyName").text
-        val = prop.find("Value").text.replace(',', '.')
-        if name in DIN_MAP:
-            props[DIN_MAP[name]] = val
+        name_elem = prop.find("PropertyName")
+        val_elem = prop.find("Value")
+        if name_elem is not None and val_elem is not None:
+            name = name_elem.text
+            val = val_elem.text.replace(',', '.')
+            if name in DIN_MAP:
+                props[DIN_MAP[name]] = val
+    
     props['id'] = root.find(".//PrimaryId").text if root.find(".//PrimaryId") is not None else "Unknown"
     props['manufacturer'] = root.find(".//Manufacturer").text if root.find(".//Manufacturer") is not None else "HOG"
     props['teeth'] = int(float(props.get('teeth', 1)))
     props['diameter'] = float(props.get('diameter', 0))
     
-    # Typerkennung anhand NSM (Bohrer vs Fräser)
     nsm = root.find(".//Property-Data[PropertyName='NSM']/Value")
     props['subType'] = "DRILL" if nsm is not None and "4000-81" in nsm.text else "END MILL"
     return props
@@ -72,8 +75,8 @@ def build_single_solidcam_xml(t, material_name, material_params):
     shape = ET.SubElement(comp, "Shape")
     stype = ET.SubElement(shape, t['subType'])
     ET.SubElement(stype, "diameter").text = str(t['diameter'])
-    ET.SubElement(stype, "cutting_edge_length").text = t.get('cutting_length', '10')
-    ET.SubElement(stype, "total_length").text = t.get('total_length', '50')
+    ET.SubElement(stype, "cutting_edge_length").text = str(t.get('cutting_length', '10'))
+    ET.SubElement(stype, "total_length").text = str(t.get('total_length', '50'))
     ET.SubElement(stype, "number_of_teeth").text = str(t['teeth'])
     
     fs_root = ET.SubElement(tool, "FeedsAndSpins")
@@ -81,23 +84,37 @@ def build_single_solidcam_xml(t, material_name, material_params):
     mill = ET.SubElement(fs, "milling")
     ET.SubElement(mill, "FeedRate").text = str(vf)
     ET.SubElement(mill, "SpinRate").text = str(n)
+    ET.SubElement(mill, "dir").text = "CW"
     
     return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
 
 # --- UI ---
-st.title("🛠 DIN to SolidCAM (Einzel-Dateien)")
+st.title("🛠 DIN to SolidCAM (Einzel-Dateien ZIP)")
 
 st.sidebar.header("Schnittdaten")
 selected_mat = st.sidebar.selectbox("Material", list(MATERIAL_DATA.keys()))
-vc = st.sidebar.number_input("vc", value=MATERIAL_DATA[selected_mat]["vc"])
-fz = st.sidebar.number_input("fz", value=MATERIAL_DATA[selected_mat]["fz"], format="%.3f")
+vc = st.sidebar.number_input("Schnittgeschwindigkeit (vc)", value=MATERIAL_DATA[selected_mat]["vc"])
+fz = st.sidebar.number_input("Vorschub pro Zahn (fz)", value=MATERIAL_DATA[selected_mat]["fz"], format="%.3f")
 
 uploaded_files = st.file_uploader("DIN XMLs hochladen", type="xml", accept_multiple_files=True)
 
 if uploaded_files:
     zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for f in uploaded_files:
             try:
                 data = parse_din_xml(f.read())
-                sc_xml = build_single_solidcam_xml(data, selected_mat, {"vc": 
+                sc_xml = build_single_solidcam_xml(data, selected_mat, {"vc": vc, "fz": fz})
+                clean_name = f"{data['id'].replace(' ', '_')}_SolidCAM.xml"
+                zip_file.writestr(clean_name, sc_xml)
+            except Exception as e:
+                st.error(f"Fehler bei {f.name}: {e}")
+
+    if len(uploaded_files) > 0:
+        st.success(f"{len(uploaded_files)} Dateien verarbeitet.")
+        st.download_button(
+            label="📦 Alle SolidCAM XMLs als ZIP laden",
+            data=zip_buffer.getvalue(),
+            file_name=f"SolidCAM_Export_{selected_mat}.zip",
+            mime="application/zip"
+        )
