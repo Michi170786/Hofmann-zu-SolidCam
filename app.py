@@ -19,8 +19,10 @@ MATERIAL_DATA = {
 
 def to_f(val, default=0.0):
     if not val: return default
-    try: return float(str(val).replace(',', '.'))
-    except: return default
+    try:
+        return float(str(val).replace(',', '.'))
+    except:
+        return default
 
 def create_base_xml():
     results = ET.Element("Results")
@@ -123,7 +125,7 @@ def build_bull_nose_mill(t, mat_name, vc, fz):
     return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
 
 # --- APP UI ---
-st.title("🛠 DIN to SolidCAM Converter (Ideal Fix)")
+st.title("🛠 DIN to SolidCAM (Logic Fix: Radius >= 0.3)")
 mat = st.sidebar.selectbox("Material", list(MATERIAL_DATA.keys()))
 vc = st.sidebar.number_input("vc", value=MATERIAL_DATA[mat]["vc"])
 fz = st.sidebar.number_input("fz", value=MATERIAL_DATA[mat]["fz"], format="%.3f")
@@ -145,8 +147,10 @@ if files:
                 pid_elem = root.find(".//PrimaryId")
                 props['id'] = pid_elem.text if pid_elem is not None else f.name.replace('.xml', '')
                 
+                # ENTSCHEIDUNG LOGIK: Radius >= 0.3 mm -> Torus
                 cr_val = to_f(props.get('cr', 0.0))
-                if cr_val > 0:
+                
+                if cr_val >= 0.3:
                     xml_out = build_bull_nose_mill(props, mat, vc, fz)
                 else:
                     xml_out = build_end_mill(props, mat, vc, fz)
