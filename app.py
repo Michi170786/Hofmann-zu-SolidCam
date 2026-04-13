@@ -18,99 +18,19 @@ MATERIAL_DATA = {
     "Guss (GG25)": {"vc": 140, "fz": 0.08}
 }
 
-def build_solidcam_xml(t, mat_name, vc, fz):
-    now = datetime.now()
-    d = float(t.get('diameter', 10))
-    z = int(float(t.get('teeth', 2)))
-    cr = float(t.get('cr', 0))
-    
-    n = int((vc * 1000) / (d * math.pi))
-    vf = int(n * z * fz)
-    c_id = f"SC_Tool_{t['id'].replace(' ', '_')}"
-
-    # Entscheidung: Torus oder Schaftfräser
-    is_torus = cr > 0
-    sub_type = "BULL NOSE MILL" if is_torus else "END MILL"
-    shape_tag = "BULL_NOSE_MILL" if is_torus else "END_MILL"
-    comp_name = "Torusfräser" if is_torus else "Schaftfräser"
-
-    # Root mit Namespaces
+def create_base_xml():
     results = ET.Element("Results")
     results.set("xmlns:xs", "http://www.w3.org/2001/XMLSchema")
     results.set("xmlns:ext", "http://exslt.org/common")
-    
     proj = ET.SubElement(results, "projectData")
     ET.SubElement(proj, "programmer").text = "michael.schmaler"
-    ET.SubElement(proj, "date").text = now.strftime("%m/%d/%y")
-    ET.SubElement(proj, "time").text = now.strftime("%H:%M:%S")
+    ET.SubElement(proj, "date").text = datetime.now().strftime("%m/%d/%y")
+    ET.SubElement(proj, "time").text = datetime.now().strftime("%H:%M:%S")
     ET.SubElement(proj, "vmid_name").text = ""
+    return results
 
-    tools_node = ET.SubElement(results, "Tools", version="1", machine="")
-    tool = ET.SubElement(tools_node, "Tool")
-    
-    # Tool Basisdaten
-    ET.SubElement(tool, "units").text = "Metric"
-    ET.SubElement(tool, "catalog_num").text = str(t['id'])
-    ET.SubElement(tool, "description").text = str(t.get('desc', ''))
-    ET.SubElement(tool, "ident").text = str(t['id'])
-    ET.SubElement(tool, "number").text = "1"
-    for i in range(1, 6): ET.SubElement(tool, f"message{i}").text = ""
-
-    # COMPONENTS
-    comps = ET.SubElement(tool, "Components")
-    comp = ET.SubElement(comps, "Component", id=c_id, name=comp_name, type="Cutter", subType=sub_type)
-    ET.SubElement(comp, "units").text = "Metric"
-    ET.SubElement(comp, "manufacturer").text = "HOG"
-    ET.SubElement(comp, "price").text = "0"
-    ET.SubElement(comp, "mass").text = "0"
-    ET.SubElement(comp, "quantity").text = "1"
-    
-    shape = ET.SubElement(comp, "Shape")
-    tool_shape = ET.SubElement(shape, shape_tag)
-    ET.SubElement(tool_shape, "units").text = "Metric"
-    ET.SubElement(tool_shape, "shape_type").text = "0"
-    ET.SubElement(tool_shape, "arbor_diameter", units="0").text = str(t.get('sd', d))
-    ET.SubElement(tool_shape, "cutting_edge_length", units="0").text = str(t.get('cl', '20'))
-    ET.SubElement(tool_shape, "diameter", units="0").text = str(d)
-    
-    if is_torus:
-        ET.SubElement(tool_shape, "corner_radius", units="0").text = str(cr)
-    else:
-        ET.SubElement(tool_shape, "corner_chamfer", units="0").text = "0"
-
-    ET.SubElement(tool_shape, "shoulder_diameter", units="0").text = str(t.get('sd', d))
-    ET.SubElement(tool_shape, "shoulder_length", units="0").text = str(t.get('sl', '30'))
-    ET.SubElement(tool_shape, "total_length", units="0").text = str(t.get('tl', '80'))
-    ET.SubElement(tool_shape, "helical_angle").text = str(t.get('angle', '45'))
-    ET.SubElement(tool_shape, "number_of_teeth").text = str(z)
-    ET.SubElement(tool_shape, "outside_holder_length").text = str(float(t.get('tl', 80)) - 45)
-
-    # Position im Component
-    pos_comp = ET.SubElement(comp, "Position", type="FromStation")
-    ET.SubElement(pos_comp, "x").text = "0"
-    ET.SubElement(pos_comp, "y").text = "0"
-    ET.SubElement(pos_comp, "z").text = "45"
-    orm = ET.SubElement(pos_comp, "OrientationRotationMatrix")
-    ET.SubElement(orm, "x").text = "1, 0, 0"
-    ET.SubElement(orm, "y").text = "-0, 1, 0"
-    ET.SubElement(orm, "z").text = "0, 0, 1"
-
-    # OFFSETS
-    offsets = ET.SubElement(tool, "Offsets")
-    off = ET.SubElement(offsets, "Offset", connectTo=c_id, name="Schneidenlage")
-    ET.SubElement(off, "units").text = "Metric"
-    ET.SubElement(off, "cutting").text = "1"
-    ET.SubElement(off, "operation_type").text = "Milling"
-    ET.SubElement(off, "offset_number", auto="1").text = "1"
-    ET.SubElement(off, "radius", auto="1").text = str(d/2)
-    
-    pos_off = ET.SubElement(off, "Position", type="FromStation")
-    ET.SubElement(pos_off, "x").text = "0"
-    ET.SubElement(pos_off, "y").text = "0"
-    ET.SubElement(pos_off, "z").text = "-45"
-
-    # FEEDS AND SPINS
-    fs_root = ET.SubElement(tool, "FeedsAndSpins")
+def add_feeds_and_spins(tool_node, c_id, mat_name, n, vf):
+    fs_root = ET.SubElement(tool_node, "FeedsAndSpins")
     fs = ET.SubElement(fs_root, "FeedAndSpin", name=f"Auto_{mat_name}", connectTo=c_id, app_type="MillTurn")
     ET.SubElement(fs, "units").text = "Metric"
     mill = ET.SubElement(fs, "milling")
@@ -118,10 +38,70 @@ def build_solidcam_xml(t, mat_name, vc, fz):
     ET.SubElement(mill, "SpinRate").text = str(n)
     ET.SubElement(mill, "dir").text = "CW"
 
+# --- TEMPLATE SCHAFTFRÄSER ---
+def build_end_mill(t, mat_name, vc, fz):
+    d = float(t.get('diameter', 10)); z = int(float(t.get('teeth', 2)))
+    n = int((vc * 1000) / (d * math.pi)); vf = int(n * z * fz)
+    c_id = f"SC_Schaftfräser_{t['id'].replace(' ', '_')}"
+    
+    results = create_base_xml()
+    tools_node = ET.SubElement(results, "Tools", version="1", machine="")
+    tool = ET.SubElement(tools_node, "Tool")
+    ET.SubElement(tool, "units").text = "Metric"
+    ET.SubElement(tool, "ident").text = t['id']
+    ET.SubElement(tool, "number").text = "1"
+
+    comps = ET.SubElement(tool, "Components")
+    comp = ET.SubElement(comps, "Component", id=c_id, name="Schaftfräser", type="Cutter", subType="END MILL")
+    shape = ET.SubElement(comp, "Shape")
+    em = ET.SubElement(shape, "END_MILL")
+    ET.SubElement(em, "units").text = "Metric"
+    ET.SubElement(em, "diameter", units="0").text = str(d)
+    ET.SubElement(em, "cutting_edge_length", units="0").text = str(t.get('cl', '20'))
+    ET.SubElement(em, "total_length", units="0").text = str(t.get('tl', '80'))
+    ET.SubElement(em, "number_of_teeth").text = str(z)
+    
+    offsets = ET.SubElement(tool, "Offsets")
+    off = ET.SubElement(offsets, "Offset", connectTo=c_id, name="Schneidenlage")
+    ET.SubElement(off, "radius", auto="1").text = str(d/2)
+    
+    add_feeds_and_spins(tool, c_id, mat_name, n, vf)
     return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
 
-# --- UI ---
-st.title("🛠 DIN to SolidCAM (Fräser & Torus V2)")
+# --- TEMPLATE TORUSFRÄSER ---
+def build_bull_nose_mill(t, mat_name, vc, fz):
+    d = float(t.get('diameter', 10)); z = int(float(t.get('teeth', 2))); cr = float(t.get('cr', 0))
+    n = int((vc * 1000) / (d * math.pi)); vf = int(n * z * fz)
+    c_id = f"SC_Torusfräser_{t['id'].replace(' ', '_')}"
+    
+    results = create_base_xml()
+    tools_node = ET.SubElement(results, "Tools", version="1", machine="")
+    tool = ET.SubElement(tools_node, "Tool")
+    ET.SubElement(tool, "units").text = "Metric"
+    ET.SubElement(tool, "ident").text = t['id']
+    ET.SubElement(tool, "number").text = "1"
+
+    comps = ET.SubElement(tool, "Components")
+    comp = ET.SubElement(comps, "Component", id=c_id, name="Torusfräser", type="Cutter", subType="BULL NOSE MILL")
+    shape = ET.SubElement(comp, "Shape")
+    bnm = ET.SubElement(shape, "BULL_NOSE_MILL")
+    ET.SubElement(bnm, "units").text = "Metric"
+    ET.SubElement(bnm, "diameter", units="0").text = str(d)
+    ET.SubElement(bnm, "corner_radius", units="0").text = str(cr)
+    ET.SubElement(bnm, "cutting_edge_length", units="0").text = str(t.get('cl', '20'))
+    ET.SubElement(bnm, "total_length", units="0").text = str(t.get('tl', '80'))
+    ET.SubElement(bnm, "shoulder_length", units="0").text = str(t.get('sl', '30'))
+    ET.SubElement(bnm, "number_of_teeth").text = str(z)
+
+    offsets = ET.SubElement(tool, "Offsets")
+    off = ET.SubElement(offsets, "Offset", connectTo=c_id, name="Schneidenlage")
+    ET.SubElement(off, "radius", auto="1").text = str(d/2)
+
+    add_feeds_and_spins(tool, c_id, mat_name, n, vf)
+    return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
+
+# --- APP LOGIK ---
+st.title("🛠 DIN to SolidCAM (Typ-Separiert)")
 selected_mat = st.sidebar.selectbox("Material", list(MATERIAL_DATA.keys()))
 vc = st.sidebar.number_input("vc", value=MATERIAL_DATA[selected_mat]["vc"])
 fz = st.sidebar.number_input("fz", value=MATERIAL_DATA[selected_mat]["fz"], format="%.3f")
@@ -133,18 +113,16 @@ if uploaded_files:
     with zipfile.ZipFile(zip_buffer, "w") as zf:
         for f in uploaded_files:
             try:
-                tree = ET.parse(f)
-                root = tree.getroot()
+                tree = ET.parse(f); root = tree.getroot()
                 props = {}
                 for prop in root.findall(".//Property-Data"):
                     n_e = prop.find("PropertyName"); v_e = prop.find("Value")
-                    if n_e is not None and v_e is not None:
-                        if n_e.text in DIN_MAP:
-                            props[DIN_MAP[n_e.text]] = v_e.text.replace(',', '.')
+                    if n_e and v_e:
+                        if n_e.text in DIN_MAP: props[DIN_MAP[n_e.text]] = v_e.text.replace(',', '.')
                 p_id = root.find(".//PrimaryId")
                 props['id'] = p_id.text if p_id is not None else f.name.replace('.xml', '')
-                xml_out = build_solidcam_xml(props, selected_mat, vc, fz)
-                zf.writestr(f"{props['id'].replace(' ', '_')}.xml", xml_out)
-            except Exception as e:
-                st.error(f"Fehler bei {f.name}: {e}")
-    st.download_button("📦 Download ZIP", zip_buffer.getvalue(), "SolidCAM_Tools.zip", "application/zip")
+                
+                # ENTSCHEIDUNG WELCHER TYP
+                cr_val = float(props.get('cr', 0))
+                if cr_val > 0:
+                    xml_out
