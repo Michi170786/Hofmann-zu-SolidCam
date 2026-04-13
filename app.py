@@ -17,12 +17,14 @@ MATERIAL_DATA = {
     "Edelstahl": {"vc": 90, "fz": 0.04}
 }
 
-def build_xml(t, mat_name, vc, fz):
-    # Sicherstellen, dass Zahlen korrekt gelesen werden
-    def to_f(val, default=0.0):
-        try: return float(str(val).replace(',', '.'))
-        except: return default
+def to_f(val, default=0.0):
+    """Sicherer Umwandler für Zahlen"""
+    try:
+        return float(str(val).replace(',', '.'))
+    except:
+        return default
 
+def build_xml(t, mat_name, vc, fz):
     d = to_f(t.get('diameter', 10.0))
     z = int(to_f(t.get('teeth', 2.0)))
     cr = to_f(t.get('cr', 0.0))
@@ -71,14 +73,53 @@ def build_xml(t, mat_name, vc, fz):
 
     return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
 
-# --- UI ---
-st.title("🛠 DIN Converter (Stable)")
+# --- APP UI ---
+st.set_page_config(page_title="DIN to SolidCAM Converter", layout="centered")
+st.title("🛠 DIN to SolidCAM (Final Stable)")
+
 mat = st.sidebar.selectbox("Material", list(MATERIAL_DATA.keys()))
 vc = st.sidebar.number_input("vc", value=MATERIAL_DATA[mat]["vc"])
 fz = st.sidebar.number_input("fz", value=MATERIAL_DATA[mat]["fz"], format="%.3f")
 
-files = st.file_uploader("XMLs hochladen", type="xml", accept_multiple_files=True)
+files = st.file_uploader("XML Dateien hochladen", type="xml", accept_multiple_files=True)
 
 if files:
-    buf = BytesIO()
-  
+    zip_buffer = BytesIO()
+    count = 0
+    
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        for f in files:
+            try:
+                f.seek(0)
+                tree = ET.parse(f)
+                root = tree.getroot()
+                props = {}
+                for p in root.findall(".//Property-Data"):
+                    n_tag = p.find("PropertyName")
+                    v_tag = p.find("Value")
+                    if n_tag is not None and v_tag is not None:
+                        if n_tag.text in DIN_MAP:
+                            props[DIN_MAP[n_tag.text]] = v_tag.text
+                
+                pid_elem = root.find(".//PrimaryId")
+                props['id'] = pid_elem.text if pid_elem is not None else f.name.replace('.xml', '')
+                
+                xml_out = build_xml(props, mat, vc, fz)
+                # Dateiname säubern
+                filename = f"{str(props['id']).replace(' ', '_').replace('/', '_')}.xml"
+                zf.writestr(filename, xml_out)
+                count += 1
+            except Exception as e:
+                st.error(f"Fehler bei {f.name}: {str(e)}")
+
+    # WICHTIG: Button nur zeigen, wenn mindestens eine Datei erfolgreich war
+    if count > 0:
+        st.success(f"Erfolgreich {count} Dateien konvertiert.")
+        st.download_button(
+            label="📦 SolidCAM ZIP herunterladen",
+            data=zip_buffer.getvalue(),
+            file_name="SolidCAM_Export.zip",
+            mime="application/zip"
+        )
+    else:
+    
