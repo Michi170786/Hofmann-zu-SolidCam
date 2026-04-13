@@ -1,6 +1,7 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import math
+import re
 from io import BytesIO
 import zipfile
 from datetime import datetime
@@ -18,6 +19,12 @@ MATERIAL_DATA = {
     "Guss (GG25)": {"vc": 140, "fz": 0.08}
 }
 
+def clean_float(value_str, fallback=0.0):
+    """Extrahiert Zahlen aus Strings (hilft bei 'M3' oder '12,5')"""
+    if not value_str: return fallback
+    match = re.search(r"[-+]?\d*\.\d+|\d+", str(value_str).replace(',', '.'))
+    return float(match.group()) if match else fallback
+
 def create_base_xml():
     results = ET.Element("Results")
     results.set("xmlns:xs", "http://www.w3.org/2001/XMLSchema")
@@ -34,64 +41,31 @@ def add_feeds_and_spins(tool_node, c_id, mat_name, n, vf):
     fs = ET.SubElement(fs_root, "FeedAndSpin", name=f"Auto_{mat_name}", connectTo=c_id, app_type="MillTurn")
     ET.SubElement(fs, "units").text = "Metric"
     mill = ET.SubElement(fs, "milling")
-    ET.SubElement(mill, "FeedRate").text = str(vf)
-    ET.SubElement(mill, "SpinRate").text = str(n)
+    ET.SubElement(mill, "FeedRate").text = str(int(vf))
+    ET.SubElement(mill, "SpinRate").text = str(int(n))
     ET.SubElement(mill, "dir").text = "CW"
 
-# --- TEMPLATE SCHAFTFRÄSER ---
-def build_end_mill(t, mat_name, vc, fz):
-    d = float(t.get('diameter', 10)); z = int(float(t.get('teeth', 2)))
-    n = int((vc * 1000) / (d * math.pi)); vf = int(n * z * fz)
-    c_id = f"SC_Schaftfräser_{t['id'].replace(' ', '_')}"
+# --- TEMPLATES ---
+def build_tool_xml(t, mat_name, vc, fz):
+    d = clean_float(t.get('diameter', 10))
+    z = int(clean_float(t.get('teeth', 2)))
+    cr = clean_float(t.get('cr', 0))
     
+    n = (vc * 1000) / (d * math.pi) if d > 0 else 1000
+    vf = n * z * fz
+    
+    is_torus = cr > 0
+    sub_type = "BULL NOSE MILL" if is_torus else "END MILL"
+    shape_tag = "BULL_NOSE_MILL" if is_torus else "END_MILL"
+    
+    c_id = f"SC_Tool_{str(t['id']).replace(' ', '_')}"
     results = create_base_xml()
     tools_node = ET.SubElement(results, "Tools", version="1", machine="")
     tool = ET.SubElement(tools_node, "Tool")
     ET.SubElement(tool, "units").text = "Metric"
-    ET.SubElement(tool, "ident").text = t['id']
+    ET.SubElement(tool, "ident").text = str(t['id'])
     ET.SubElement(tool, "number").text = "1"
 
     comps = ET.SubElement(tool, "Components")
-    comp = ET.SubElement(comps, "Component", id=c_id, name="Schaftfräser", type="Cutter", subType="END MILL")
-    shape = ET.SubElement(comp, "Shape")
-    em = ET.SubElement(shape, "END_MILL")
-    ET.SubElement(em, "units").text = "Metric"
-    ET.SubElement(em, "diameter", units="0").text = str(d)
-    ET.SubElement(em, "cutting_edge_length", units="0").text = str(t.get('cl', '20'))
-    ET.SubElement(em, "total_length", units="0").text = str(t.get('tl', '80'))
-    ET.SubElement(em, "number_of_teeth").text = str(z)
-    
-    offsets = ET.SubElement(tool, "Offsets")
-    off = ET.SubElement(offsets, "Offset", connectTo=c_id, name="Schneidenlage")
-    ET.SubElement(off, "radius", auto="1").text = str(d/2)
-    
-    add_feeds_and_spins(tool, c_id, mat_name, n, vf)
-    return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
-
-# --- TEMPLATE TORUSFRÄSER ---
-def build_bull_nose_mill(t, mat_name, vc, fz):
-    d = float(t.get('diameter', 10)); z = int(float(t.get('teeth', 2))); cr = float(t.get('cr', 0))
-    n = int((vc * 1000) / (d * math.pi)); vf = int(n * z * fz)
-    c_id = f"SC_Torusfräser_{t['id'].replace(' ', '_')}"
-    
-    results = create_base_xml()
-    tools_node = ET.SubElement(results, "Tools", version="1", machine="")
-    tool = ET.SubElement(tools_node, "Tool")
-    ET.SubElement(tool, "units").text = "Metric"
-    ET.SubElement(tool, "ident").text = t['id']
-    ET.SubElement(tool, "number").text = "1"
-
-    comps = ET.SubElement(tool, "Components")
-    comp = ET.SubElement(comps, "Component", id=c_id, name="Torusfräser", type="Cutter", subType="BULL NOSE MILL")
-    shape = ET.SubElement(comp, "Shape")
-    bnm = ET.SubElement(shape, "BULL_NOSE_MILL")
-    ET.SubElement(bnm, "units").text = "Metric"
-    ET.SubElement(bnm, "diameter", units="0").text = str(d)
-    ET.SubElement(bnm, "corner_radius", units="0").text = str(cr)
-    ET.SubElement(bnm, "cutting_edge_length", units="0").text = str(t.get('cl', '20'))
-    ET.SubElement(bnm, "total_length", units="0").text = str(t.get('tl', '80'))
-    ET.SubElement(bnm, "shoulder_length", units="0").text = str(t.get('sl', '30'))
-    ET.SubElement(bnm, "number_of_teeth").text = str(z)
-
-    offsets = ET.SubElement(tool, "Offsets")
-    off 
+    comp = ET.SubElement(comps, "Component", id=c_id, name=sub_type, type="Cutter", subType=sub_type)
+    shape = ET.SubEleme
