@@ -117,12 +117,22 @@ if uploaded_files:
                 props = {}
                 for prop in root.findall(".//Property-Data"):
                     n_e = prop.find("PropertyName"); v_e = prop.find("Value")
-                    if n_e and v_e:
+                    if n_e is not None and v_e is not None:
                         if n_e.text in DIN_MAP: props[DIN_MAP[n_e.text]] = v_e.text.replace(',', '.')
+                
                 p_id = root.find(".//PrimaryId")
                 props['id'] = p_id.text if p_id is not None else f.name.replace('.xml', '')
                 
                 # ENTSCHEIDUNG WELCHER TYP
                 cr_val = float(props.get('cr', 0))
                 if cr_val > 0:
-                    xml_out
+                    xml_out = build_bull_nose_mill(props, selected_mat, vc, fz)
+                else:
+                    xml_out = build_end_mill(props, selected_mat, vc, fz)
+                
+                zf.writestr(f"{props['id'].replace(' ', '_')}.xml", xml_out)
+            except Exception as e:
+                st.error(f"Fehler bei {f.name}: {e}")
+
+    if len(uploaded_files) > 0:
+        st.download_button("📦 Download SolidCAM ZIP", zip_buffer.getvalue(), "SolidCAM_Export.zip", "application/zip")
