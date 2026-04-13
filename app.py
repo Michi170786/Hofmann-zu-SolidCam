@@ -94,45 +94,4 @@ def build_bull_nose_mill(t, mat_name, vc, fz):
     ET.SubElement(bnm, "number_of_teeth").text = str(z)
 
     offsets = ET.SubElement(tool, "Offsets")
-    off = ET.SubElement(offsets, "Offset", connectTo=c_id, name="Schneidenlage")
-    ET.SubElement(off, "radius", auto="1").text = str(d/2)
-
-    add_feeds_and_spins(tool, c_id, mat_name, n, vf)
-    return ET.tostring(results, encoding="UTF-8", xml_declaration=True)
-
-# --- APP LOGIK ---
-st.title("🛠 DIN to SolidCAM (Typ-Separiert)")
-selected_mat = st.sidebar.selectbox("Material", list(MATERIAL_DATA.keys()))
-vc = st.sidebar.number_input("vc", value=MATERIAL_DATA[selected_mat]["vc"])
-fz = st.sidebar.number_input("fz", value=MATERIAL_DATA[selected_mat]["fz"], format="%.3f")
-
-uploaded_files = st.file_uploader("DIN XMLs hochladen", type="xml", accept_multiple_files=True)
-
-if uploaded_files:
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zf:
-        for f in uploaded_files:
-            try:
-                tree = ET.parse(f); root = tree.getroot()
-                props = {}
-                for prop in root.findall(".//Property-Data"):
-                    n_e = prop.find("PropertyName"); v_e = prop.find("Value")
-                    if n_e is not None and v_e is not None:
-                        if n_e.text in DIN_MAP: props[DIN_MAP[n_e.text]] = v_e.text.replace(',', '.')
-                
-                p_id = root.find(".//PrimaryId")
-                props['id'] = p_id.text if p_id is not None else f.name.replace('.xml', '')
-                
-                # ENTSCHEIDUNG WELCHER TYP
-                cr_val = float(props.get('cr', 0))
-                if cr_val > 0:
-                    xml_out = build_bull_nose_mill(props, selected_mat, vc, fz)
-                else:
-                    xml_out = build_end_mill(props, selected_mat, vc, fz)
-                
-                zf.writestr(f"{props['id'].replace(' ', '_')}.xml", xml_out)
-            except Exception as e:
-                st.error(f"Fehler bei {f.name}: {e}")
-
-    if len(uploaded_files) > 0:
-        st.download_button("📦 Download SolidCAM ZIP", zip_buffer.getvalue(), "SolidCAM_Export.zip", "application/zip")
+    off 
