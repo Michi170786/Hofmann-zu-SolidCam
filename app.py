@@ -162,4 +162,9 @@ if files:
     
     if count > 0:
         st.success(f"{count} Werkzeuge bereit.")
-        st.download_button("📦 Download ZIP", zip_buffer.getvalue(), "SolidCAM_Export.zip", "application/zip")
+        st.download_button(
+            label="📦 Download ZIP",
+            data=zip_buffer.getvalue(),
+            file_name="SolidCAM_Export.zip",
+            mime="application/zip"
+        )
